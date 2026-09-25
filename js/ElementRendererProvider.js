@@ -95,15 +95,31 @@ export default class ElementRendererProvider {
         Utils.appendAttributesFromObject(btnEl, config.accessibility.web);
       }
 
+      function findJsonPollockParent(element: any): HTMLDivElement | typeof undefined {
+        if (!element) {
+          return undefined;
+        }
+
+        const matches = element.classList.contains('lp-json-pollock');
+        if (matches) {
+          return element;
+        }
+
+        return findJsonPollockParent(element.parentNode);
+      }
+
       const clickData = config.click;
 
       if (clickData && clickData.actions) {
-        const { metadata } = clickData;
+        if (config.ref) {
+          btnEl.onclick = (event, formEl) => {
+            const newMetadata = [];
+            const jsonPollockElement = findJsonPollockParent(btnEl);
 
-        btnEl.onclick = (event, formEl) => {
-          const newMetadata = [...(metadata || [])];
+            if (!jsonPollockElement) {
+              throw new Error('Cannot find root element selected!');
+            }
 
-          if (config.ref) {
             let selector;
 
             switch (config.ref.type) {
@@ -119,17 +135,23 @@ export default class ElementRendererProvider {
                 throw new Error(`Invalid config ref type is used for the button! Type: ${config.ref.type}`);
             }
 
-            const selectedNodes = Array.from(document.querySelectorAll(selector));
+            const selectedNodes = Array.from(jsonPollockElement.querySelectorAll(selector));
 
             if (selectedNodes.length === 0) {
               throw new Error('No items has selected!');
             }
 
-            newMetadata.push({ type: 'selectedCards', cards: selectedNodes.map(node => JSON.parse(node.getAttribute('data-metadata') || 'null')) });
-          }
+            const selectedCardsMetadata = selectedNodes
+              .map(node => JSON.parse(node.getAttribute('data-metadata') || '[]'))
+              .reduce((accumulator, currentMeta) => [...accumulator, ...currentMeta], []);
 
-          return this.wrapAction({ ...clickData, metadata: newMetadata })(event, formEl);
-        };
+            newMetadata.push(...selectedCardsMetadata);
+
+            return this.wrapAction({ ...clickData, metadata: newMetadata })(event, formEl);
+          };
+        } else {
+          btnEl.onclick = this.wrapAction(config.click);
+        }
       }
 
       if (config.class !== 'button') {
@@ -662,6 +684,8 @@ export default class ElementRendererProvider {
           svgChildArrowLeft.setAttribute('style', splitedStyle.style);
         }
       }
+
+      arrowLeft.style.visibility = 'visible'; // CAO-22400 forcing visibility through js for older versions
 
       function setShowingCard(event) {
         if (!cards || !cards[carouselItemIndex]) {
